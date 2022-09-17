@@ -18,7 +18,7 @@ Todo
 ## Why not directly route requests to a (central) remote HTTP server/database?
 
 - Latency and unneccesary bandwidth.
-- Public facing databases/HTTP server are prime targets for automated fuzzing and attacks.
+- Public facing databases/HTTP servers are prime targets for automated fuzzing and attacks.
 - There would be additional security work required both initially and over time, as maintenance.
 
 ## Why not use a VPN?
