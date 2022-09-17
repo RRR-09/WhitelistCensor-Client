@@ -16,8 +16,8 @@ from models import (
 )
 
 MIN_TO_REQUEST_WHITELIST = 2  # Minimum messages to trigger a whitelist request
-REMOTE_DATA_PATH = Path("..", "remote_data")  # Synced with remote master
-LOCAL_DATA_PATH = Path("..", "local_data")  # Only used and modified locally
+REMOTE_DATA_PATH = Path("..", "data_remote")  # Synced with remote master
+LOCAL_DATA_PATH = Path("..", "data_local")  # Only used and modified locally
 FILE_PATHS = {
     "blacklist": REMOTE_DATA_PATH / "blacklist.json",
     "custom_old": REMOTE_DATA_PATH / "custom_old.json",

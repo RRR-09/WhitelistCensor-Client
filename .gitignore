@@ -1,6 +1,6 @@
 # Project files
-local_data/
-remote_data/
+data_local/
+data_remote/
 
 # .env
 .env
