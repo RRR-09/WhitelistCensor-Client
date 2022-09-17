@@ -1,0 +1,15 @@
+# Project files
+local_data/
+remote_data/
+
+# .env
+.env
+
+# PyCache
+__pycache__/
+
+# mypy
+.mypy_cache/
+
+# poetry
+.venv/
