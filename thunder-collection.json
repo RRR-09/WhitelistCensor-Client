@@ -1,0 +1,90 @@
+{
+  "client": "Thunder Client",
+  "collectionName": "WhitelistService",
+  "dateExported": "2022-09-16T23:50:29.166Z",
+  "version": "1.1",
+  "folders": [],
+  "requests": [
+    {
+      "_id": "c04cae95-8463-428e-b67d-9affc5d8e8b6",
+      "colId": "7c5eae4f-fbe5-491b-8125-413c472ba45f",
+      "containerId": "",
+      "name": "Request Censored String",
+      "url": "/request_censored_message",
+      "method": "POST",
+      "sortNum": 10000,
+      "created": "2022-09-12T22:46:47.695Z",
+      "modified": "2022-09-16T23:10:34.307Z",
+      "headers": [],
+      "params": [],
+      "body": {
+        "type": "json",
+        "raw": "{\n  \"username\": \"username_trigger\",\n  \"message\": \"not_in_whitelist test message\"\n}",
+        "form": []
+      },
+      "tests": []
+    },
+    {
+      "_id": "7fc380a1-3e4a-4d6b-aac0-83e6d041b65f",
+      "colId": "7c5eae4f-fbe5-491b-8125-413c472ba45f",
+      "containerId": "",
+      "name": "Attempt Blacklisted Words",
+      "url": "/request_censored_message",
+      "method": "POST",
+      "sortNum": 20000,
+      "created": "2022-09-16T23:13:55.240Z",
+      "modified": "2022-09-16T23:14:40.412Z",
+      "headers": [],
+      "params": [],
+      "body": {
+        "type": "json",
+        "raw": "{\n  \"username\": \"username_trigger\",\n  \"message\": \"not_in_whitelist test message blacklist_trigger\"\n}",
+        "form": []
+      },
+      "tests": []
+    },
+    {
+      "_id": "368acc7d-f1ad-4c2f-907c-155960debf44",
+      "colId": "7c5eae4f-fbe5-491b-8125-413c472ba45f",
+      "containerId": "",
+      "name": "Trusted User Censor",
+      "url": "/request_censored_message",
+      "method": "POST",
+      "sortNum": 25000,
+      "created": "2022-09-16T23:16:20.886Z",
+      "modified": "2022-09-16T23:16:41.983Z",
+      "headers": [],
+      "params": [],
+      "body": {
+        "type": "json",
+        "raw": "{\n  \"username\": \"trusted_username_trigger\",\n  \"message\": \"not_in_whitelist test message blacklist_trigger\"\n}",
+        "form": []
+      },
+      "tests": []
+    },
+    {
+      "_id": "00182131-3f3c-4931-b76f-2967dace0d49",
+      "colId": "7c5eae4f-fbe5-491b-8125-413c472ba45f",
+      "containerId": "",
+      "name": "Request Username Whitelist",
+      "url": "/request_censored_message",
+      "method": "POST",
+      "sortNum": 35000,
+      "created": "2022-09-16T23:17:03.518Z",
+      "modified": "2022-09-16T23:17:39.637Z",
+      "headers": [],
+      "params": [],
+      "body": {
+        "type": "json",
+        "raw": "{\n  \"username\": \"NewUsernameNotInWhitelist\",\n  \"message\": \"test message\"\n}",
+        "form": []
+      },
+      "tests": []
+    }
+  ],
+  "settings": {
+    "headers": [],
+    "tests": [],
+    "options": { "baseUrl": "http://127.0.0.1:8086" }
+  }
+}
