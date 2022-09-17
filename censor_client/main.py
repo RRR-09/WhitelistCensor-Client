@@ -3,7 +3,7 @@ import logging
 import controller
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -68,18 +68,24 @@ async def exception_handler(request: Request, exc: Exception) -> JSONResponse:
 
 
 @app.get("/")
-def read_root():
+async def read_root():
     return {"message": f"'{app.title}' is currently up and running"}
 
 
 @app.post("/request_censored_message")
-def request_censored_message(req_body: RequestCensoredMessage):
+async def request_censored_message(
+    req_body: RequestCensoredMessage, background_tasks: BackgroundTasks
+):
     # TODO: Probably some way to cleanly disassemble this in function params
     username = req_body.username
     message = req_body.message
     try:
-        censored_response = controller.request_censored_message(
-            app.state.whitelist_data, app.state.whitelist_state, username, message
+        censored_response = await controller.request_censored_message(
+            app.state.whitelist_data,
+            app.state.whitelist_state,
+            username,
+            message,
+            background_tasks,
         )
 
         return JSONResponse(

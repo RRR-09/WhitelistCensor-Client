@@ -3,7 +3,9 @@ from os import getenv
 from pathlib import Path
 from typing import Dict, List, Set
 
+import aiohttp
 from dotenv import dotenv_values
+from fastapi import BackgroundTasks
 from models import (
     CensoredStringReturn,
     FileDrivenState,
@@ -12,7 +14,6 @@ from models import (
     UsernameWhitelistRequestedStatus,
     WhitelistDatasets,
 )
-from requests import post
 
 MIN_TO_REQUEST_WHITELIST = 2  # Minimum messages to trigger a whitelist request
 REMOTE_DATA_PATH = Path("..", "remote_data")  # Synced with remote master
@@ -154,7 +155,7 @@ def load_state() -> FileDrivenState:
     return FileDrivenState(username_whitelist_request_data=username_whitelist_requested)
 
 
-def _word_in_whitelists(ds: WhitelistDatasets, word: str) -> bool:
+async def _word_in_whitelists(ds: WhitelistDatasets, word: str) -> bool:
     # Order of max expected size, least to greatest
     return (
         word in ds["custom"]
@@ -169,10 +170,10 @@ def _word_in_whitelists(ds: WhitelistDatasets, word: str) -> bool:
     )
 
 
-def _get_censored_string(
-    ds: WhitelistDatasets, string_to_check: str, debug=False
+async def _get_censored_string(
+    ds: WhitelistDatasets, unsafe_string_to_check: str, debug=False
 ) -> CensoredStringReturn:
-    string_to_check = string_to_check.encode("ascii", "ignore").decode("ascii")
+    string_to_check = unsafe_string_to_check.encode("ascii", "ignore").decode("ascii")
     censored_words = []
     censored_string_assembly = []
     space_bypassed_string = ""
@@ -199,7 +200,7 @@ def _get_censored_string(
                 debug,
             )
             if space_bypassed_string.strip() != "" and not (
-                _word_in_whitelists(ds, space_bypassed_string.lower())
+                await _word_in_whitelists(ds, space_bypassed_string.lower())
             ):
                 censored_words.append(space_bypassed_string.lower())
                 space_bypassed_censored = space_bypassed_string.replace(
@@ -210,7 +211,8 @@ def _get_censored_string(
             space_bypassed_string = ""  # Clear space bypass buffer
 
         not_empty_or_in_whitelists = (
-            clean_word.strip() != "" and not _word_in_whitelists(ds, clean_word.lower())
+            clean_word.strip() != ""
+            and not await _word_in_whitelists(ds, clean_word.lower())
         )
 
         # Handle mentions of temp usernames
@@ -232,7 +234,7 @@ def _get_censored_string(
             for suffix in common_added_suffixes:
                 truncated_word = clean_word.removesuffix(suffix)
                 if truncated_word != clean_word:
-                    if _word_in_whitelists(ds, truncated_word.lower()):
+                    if await _word_in_whitelists(ds, truncated_word.lower()):
                         good_with_suffix_change = True
                         break
 
@@ -240,7 +242,7 @@ def _get_censored_string(
             common_removed_suffixes = {"g"}
             for suffix in common_removed_suffixes:
                 supplemented_word = f"{clean_word}{suffix}"
-                if _word_in_whitelists(ds, supplemented_word.lower()):
+                if await _word_in_whitelists(ds, supplemented_word.lower()):
                     good_with_suffix_change = True
                     break
 
@@ -252,8 +254,7 @@ def _get_censored_string(
                 index = len(clean_word) - offset
                 while (index > 2) and clean_word[index] == clean_word[index - 1]:
                     word_attempt = clean_word[:index].lower()
-                    print(word_attempt)
-                    if _word_in_whitelists(ds, word_attempt):
+                    if await _word_in_whitelists(ds, word_attempt):
                         clean_word = word
                         suffix_was_duplicated = True
                         break
@@ -288,7 +289,7 @@ def _get_censored_string(
         clean_word = space_bypassed_string
         original_word = space_bypassed_string
         if clean_word.strip() != "" and not (
-            _word_in_whitelists(ds, clean_word.lower())
+            await _word_in_whitelists(ds, clean_word.lower())
         ):
             censored_words.append(clean_word.lower())
             clean_word = original_word.replace(clean_word, "*" * len(clean_word))
@@ -305,7 +306,7 @@ def _get_censored_string(
     )
 
 
-def _get_temp_username(ds: WhitelistDatasets, seed_string: str) -> str:
+async def _get_temp_username(ds: WhitelistDatasets, seed_string: str) -> str:
     """
     Returns a random 2-word username, based on the second parameter (seed_string)
     """
@@ -321,43 +322,68 @@ def _get_temp_username(ds: WhitelistDatasets, seed_string: str) -> str:
     return f"{prefix.capitalize()}{suffix.capitalize()}"
 
 
-def _user_is_trusted(ds: WhitelistDatasets, username: str) -> bool:
+async def _user_is_trusted(ds: WhitelistDatasets, username: str) -> bool:
     return username.lower() in ds["trusted_usernames"]
 
 
-def _get_user_nickname(ds: WhitelistDatasets, username: str) -> str:
+async def _get_user_nickname(ds: WhitelistDatasets, username: str) -> str:
     """
     Returns the user's nickname if it exists, otherwise returns an empty string (falsey)
     """
     return ds["nicknames"].get(username.lower(), "")
 
 
-def _username_in_whitelist(ds: WhitelistDatasets, username: str) -> bool:
+async def _username_in_whitelist(ds: WhitelistDatasets, username: str) -> bool:
     username = username.lower()
-    if _word_in_whitelists(ds, username):
+    if await _word_in_whitelists(ds, username):
         return True
 
     for word in username.split("_"):
         word = word.lower()
-        if not (_word_in_whitelists(ds, word)):
+        if not (await _word_in_whitelists(ds, word)):
             return False
 
     return True
 
 
-def _word_in_blacklist(ds: WhitelistDatasets, word: str) -> bool:
-    return word.lower() in ds["blacklist"]
+async def _get_blacklisted_words(
+    ds: WhitelistDatasets, unsafe_string_to_check: str
+) -> List[str]:
+    string_to_check = unsafe_string_to_check.encode("ascii", "ignore").decode("ascii")
+    blacklisted_words: List[str] = []
+    for word in string_to_check.split(" "):
+        if word.lower() in ds["blacklist"]:
+            blacklisted_words.append(word)
+
+    return blacklisted_words
 
 
-def _request_username(username: str, message: str) -> bool:
-    return _whitelist_request([username], message, username, is_username_req=True)
+async def _request_username(state: FileDrivenState, username: str, message: str):
+    username_lower = username.lower()
+    default_profile = UsernameWhitelistRequestedProfile(
+        status=UsernameWhitelistRequestedStatus.NOT_ON_RECORD, messages=0
+    )
+    profile = state["username_whitelist_request_data"].get(
+        username_lower, default_profile
+    )
+    try:
+        await _whitelist_request(
+            [username_lower], message, username, is_username_req=True
+        )
+        profile["status"] = UsernameWhitelistRequestedStatus.REQUEST_SENT
+    except Exception:
+        profile["status"] = UsernameWhitelistRequestedStatus.FAILED_TO_REQUEST
+
+    # Update app state and datafile
+    state["username_whitelist_request_data"][username_lower] = profile
+    with open(FILE_PATHS["username_request_statuses"], "w") as f:
+        json.dump(state["username_whitelist_request_data"], f)
 
 
-def _whitelist_request(
+async def _whitelist_request(
     requests: List[str], message: str, username: str, is_username_req=False
-) -> bool:
+):
     # TODO: Pulled directly from prototype. To be replaced with remote-server discord bot.
-
     env_key = (
         "DISCORD_WEBHOOK_USERNAME_WHITELIST_CHANNEL"
         if is_username_req
@@ -385,30 +411,63 @@ def _whitelist_request(
         "content": header_content,
         "username": webhook_username,
     }
-    result = post(webhook_url, json=webhook_data)
-    result.raise_for_status()
-
-    print("[Whitelist request header sent]")
 
     MAX_WORDS = 3
     if len(whitelist_text) > MAX_WORDS:
         # Make it into a single message, newline-seperated
         whitelist_text = ["\n".join(whitelist_text)]
 
-    for word in whitelist_text:
-        webhook_data = {
-            "content": word,
-            "username": webhook_username,
-        }
-        result = post(webhook_url, json=webhook_data)
-        result.raise_for_status()
-        print(f"[Whitelist request command sent ({word})]")
+    async with aiohttp.ClientSession() as session:
+        await session.post(
+            webhook_url, data=webhook_data, raise_for_status=is_username_req
+        )
+        print("[Whitelist request header sent]")
 
-    return True
+        for word in whitelist_text:
+            webhook_data = {
+                "content": word,
+                "username": webhook_username,
+            }
+            await session.post(
+                webhook_url, data=webhook_data, raise_for_status=is_username_req
+            )
+            print(f"[Whitelist request command sent ({word})]")
 
 
-def _request_username_whitelist(
-    state: FileDrivenState, username: str, message: str
+async def _blacklist_alert(
+    original_name: str, message: str, blacklisted_words: List[str]
+):
+    # TODO: Pulled directly from prototype. To be replaced with remote-server discord bot.
+    webhook_url = getenv(
+        "DISCORD_WEBHOOK_BLACKLIST_ALERT_CHANNEL", ""
+    )  # Must exist, verified by `check_dotenv`.
+
+    user_url = f"https://twitch.tv/popout/{getenv('TWITCH_CHAT_CHANNEL')}/viewercard/{original_name.lower()}"
+
+    mention_id = getenv("DISCORD_BLACKLIST_ALERT_USER_ID")
+    mention = f"<@{mention_id}>\n" if mention_id else ""
+
+    alert_message = (
+        f"[BLACKLIST ALERT]\nUser: `{original_name}`\nMessage: `{message}`\n"
+        f"Blacklisted Words: `{', '.join(blacklisted_words)}`\n"
+        f"<{user_url}>"
+    )
+
+    webhook_data = {
+        "content": (
+            f"{mention}{alert_message}\n"
+            f"<https://twitch.tv/{getenv('TWITCH_CHAT_CHANNEL')}>"
+        ),
+        "username": "Blacklist Alert",
+    }
+
+    async with aiohttp.ClientSession() as session:
+        await session.post(webhook_url, data=webhook_data, raise_for_status=True)
+        print(f"[Blacklist Alert Sent]\n{alert_message}")
+
+
+async def _request_username_whitelist(
+    state: FileDrivenState, username: str
 ) -> UsernameWhitelistRequestedStatus:
     """
     Each call of the function progresses a user to the next step of the whitelist request process:
@@ -424,6 +483,7 @@ def _request_username_whitelist(
         status=UsernameWhitelistRequestedStatus.NOT_ON_RECORD, messages=0
     )
     profile = state["username_whitelist_request_data"].get(username, default_profile)
+    new_profile = False
 
     if profile["status"] == UsernameWhitelistRequestedStatus.REQUEST_SENT:
         # Do not edit state or datafile, this user's process is complete and will not change
@@ -431,6 +491,7 @@ def _request_username_whitelist(
 
     if profile["status"] == UsernameWhitelistRequestedStatus.NOT_ON_RECORD:
         # This is the first known message from them, add to record
+        new_profile = True
         profile = UsernameWhitelistRequestedProfile(
             status=UsernameWhitelistRequestedStatus.NEEDS_MORE_MESSAGES, messages=1
         )
@@ -442,93 +503,87 @@ def _request_username_whitelist(
         # Increment the message counter
         profile["messages"] += 1
 
-    if profile["status"] in {
-        UsernameWhitelistRequestedStatus.READY_TO_REQUEST,
-        UsernameWhitelistRequestedStatus.FAILED_TO_REQUEST,
-    }:
-        # Attempt a whitelist request if we're ready (or failed last time)
-        try:
-            _request_username(username, message)
-            profile["status"] = UsernameWhitelistRequestedStatus.REQUEST_SENT
-        except Exception:
-            profile["status"] = UsernameWhitelistRequestedStatus.FAILED_TO_REQUEST
-
     # Update app state and datafile
     state["username_whitelist_request_data"][username] = profile
     with open(FILE_PATHS["username_request_statuses"], "w") as f:
         json.dump(state["username_whitelist_request_data"], f)
 
-    return profile["status"]
+    return (
+        UsernameWhitelistRequestedStatus.NOT_ON_RECORD
+        if new_profile
+        else profile["status"]
+    )
 
 
-def request_censored_message(
-    ds: WhitelistDatasets, state: FileDrivenState, username: str, message: str
+async def request_censored_message(
+    ds: WhitelistDatasets,
+    state: FileDrivenState,
+    username: str,
+    message: str,
+    background_tasks: BackgroundTasks,
 ) -> RequestCensoredMessageReturn:
     """
     Master censor function. Handles all automatic background logic related to the whitelist censor system.
     """
-    nickname = _get_user_nickname(ds, username)
-    if _user_is_trusted(ds, username):
+    nickname = await _get_user_nickname(ds, username)
+    if await _user_is_trusted(ds, username):
         # Beyond nickname, these users do not need to bother with the censor system.
         return RequestCensoredMessageReturn(
             username=nickname or username, message=message
         )
 
     original_name = username
-    real_or_temp_name = nickname or original_name
+    censored_name = nickname or original_name
     reply_message: List[str] = []
 
     # Check username
-    if not (nickname or _username_in_whitelist(ds, original_name)):
+    if not (nickname or await _username_in_whitelist(ds, original_name)):
         # Username not safe, we need to get a temp username and potentially request a whitelist.
-        real_or_temp_name = _get_temp_username(ds, original_name)
-        whitelist_requested_status = _request_username_whitelist(
-            state, username, message
-        )
+        censored_name = await _get_temp_username(ds, original_name)
+        whitelist_requested_status = await _request_username_whitelist(state, username)
         if whitelist_requested_status == UsernameWhitelistRequestedStatus.NOT_ON_RECORD:
             reply_message.append(
-                f"[Assigning random username '{real_or_temp_name}'. Your real username "
+                f"[Assigning random username '{censored_name}'. Your real username "
                 f"'{original_name}' is pending approval.]"
             )
+        elif whitelist_requested_status in {
+            UsernameWhitelistRequestedStatus.READY_TO_REQUEST,
+            UsernameWhitelistRequestedStatus.FAILED_TO_REQUEST,
+        }:
+            background_tasks.add_task(_request_username, state, username, message)
 
     # Check if message contains blacklisted words
-    blacklisted_words = []
-    unicode_stripped_message = message.encode("ascii", "ignore").decode("ascii")
-    for word in unicode_stripped_message.split(" "):
-        if _word_in_blacklist(ds, word):
-            blacklisted_words.append(word)
-
+    blacklisted_words = await _get_blacklisted_words(ds, message)
     if blacklisted_words:
         reply_message.append(
             f"[You've attempted to send a message with blacklisted words ({', '.join(blacklisted_words)}).]"
         )
 
-        # TODO: Should the censor service notify admin, or calling process?
-        # notify_admin(
-        #     f"[BLACKLIST ALERT]\nUser: `{original_name}`\nMessage: {message}\n"
-        #     f"Blacklisted Words: `{', '.join(blacklisted_words)}`\n"
-        #     f"<https://twitch.tv/popout/{getenv('TWITCH_CHAT_CHANNEL')}/viewercard/{original_name.lower()}>"
-        # )
+        background_tasks.add_task(
+            _blacklist_alert, original_name, message, blacklisted_words
+        )
 
         return RequestCensoredMessageReturn(
-            username=nickname or username,
+            username=censored_name,
             message=message,
             bot_reply_message=reply_message,
             send_users_message=False,
         )
 
     # Censor the message, requesting whitelist if needed
-    censored_words, censored_string = _get_censored_string(ds, message)
+    censored_words, censored_string = await _get_censored_string(ds, message)
 
     if censored_words:
         reply_message.append(
             f"[Some words you used are not in the whitelist for new users and have been sent for "
             f"approval ({', '.join(censored_words)})]"
         )
-        _whitelist_request(censored_words, message, original_name)
+        background_tasks.add_task(
+            _whitelist_request, censored_words, message, original_name
+        )
 
     return RequestCensoredMessageReturn(
-        username=nickname or username,
+        username=censored_name,
         message=censored_string,
         bot_reply_message=reply_message,
     )
