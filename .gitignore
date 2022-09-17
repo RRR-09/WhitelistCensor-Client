@@ -13,3 +13,6 @@ __pycache__/
 
 # poetry
 .venv/
+
+# ci (local runs)
+requirements-dev.txt
