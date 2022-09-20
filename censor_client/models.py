@@ -87,3 +87,11 @@ class WhitelistDatasets(TypedDict):
     trusted_usernames: Set[str]
     usernames: Set[str]
     version: int
+
+
+class WSFunction(str, Enum):
+    WHITELIST_REQUEST = "WHITELIST_REQUEST"
+
+
+class WSResponse(str, Enum):
+    COMPLETE = "COMPLETE"

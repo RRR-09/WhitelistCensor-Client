@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Set
 
 import aiohttp
+import websockets
 from dotenv import dotenv_values
 from fastapi import BackgroundTasks
 from models import (
@@ -13,6 +14,8 @@ from models import (
     UsernameWhitelistRequestedProfile,
     UsernameWhitelistRequestedStatus,
     WhitelistDatasets,
+    WSFunction,
+    WSResponse,
 )
 
 MIN_TO_REQUEST_WHITELIST = 2  # Minimum messages to trigger a whitelist request
@@ -54,7 +57,7 @@ def check_dotenv():
 
 def initialize_datafiles():
     """
-    Sensitive/client specific datafiles may not exist (not included in the repository). Create them if they're missing,
+    Datafiles may not exist (not included in the repository). Create them if they're missing,
     filling with blank data expected for that file.
     """
 
@@ -64,9 +67,13 @@ def initialize_datafiles():
 
     # { file_path_key: default_value }
     default_data = {
+        "blacklist": [],
         "custom_old": [],
         "custom": [],
+        "dictionary": [],
         "nicknames": {},
+        "random_prefixes": [],
+        "random_suffixes": [],
         "trusted_usernames": [],
         "usernames": [],
         "username_request_statuses": {},
@@ -383,55 +390,38 @@ async def _request_username(state: FileDrivenState, username: str, message: str)
 async def _whitelist_request(
     requests: List[str], message: str, username: str, is_username_req=False
 ):
-    # TODO: Pulled directly from prototype. To be replaced with remote-server discord bot.
-    env_key = (
-        "DISCORD_WEBHOOK_USERNAME_WHITELIST_CHANNEL"
-        if is_username_req
-        else "DISCORD_WEBHOOK_WORD_WHITELIST_CHANNEL"
-    )
-    webhook_url = getenv(env_key, "")  # Must exist, verified by `check_dotenv`.
-
-    user_url = f"https://twitch.tv/popout/{getenv('TWITCH_CHAT_CHANNEL')}/viewercard/{username.lower()}"
-    command = "!userwhitelist" if is_username_req else "!whitelist"
-    whitelist_text = [f"{command} {word}" for word in requests]
-    message_title = (
-        f"__Username Request__\n**{username}**"
-        if is_username_req
-        else f"__Whitelist Request from {username}__"
-    )
-    header_content = (
-        f"** **\n** **\n{message_title}\n```{message}```\n<{user_url}>\n"
-        f"<https://twitch.tv/{getenv('TWITCH_CHAT_CHANNEL')}>\n** **"
-    )
-    webhook_username = (
-        "User Whitelist Request" if is_username_req else "Word Whitelist Request"
-    )
-
-    webhook_data = {
-        "content": header_content,
-        "username": webhook_username,
+    client_id = getenv("WS_CLIENT_ID")
+    data = {
+        "id": client_id,
+        "function": WSFunction.WHITELIST_REQUEST,
+        "data": {
+            "requests": requests,
+            "message": message,
+            "username": username,
+            "is_username_req": is_username_req,
+            "channelname": getenv("TWITCH_CHAT_CHANNEL"),
+        },
     }
+    uri = getenv("WS_SERVER_URL", "")
 
-    MAX_WORDS = 3
-    if len(whitelist_text) > MAX_WORDS:
-        # Make it into a single message, newline-seperated
-        whitelist_text = ["\n".join(whitelist_text)]
+    async with websockets.connect(uri) as websocket:  # type: ignore
+        await websocket.send(json.dumps(data))
 
-    async with aiohttp.ClientSession() as session:
-        await session.post(
-            webhook_url, data=webhook_data, raise_for_status=is_username_req
-        )
-        print("[Whitelist request header sent]")
+        response_raw = await websocket.recv()
+        response = json.loads(response_raw)
+        print(response)
 
-        for word in whitelist_text:
-            webhook_data = {
-                "content": word,
-                "username": webhook_username,
-            }
-            await session.post(
-                webhook_url, data=webhook_data, raise_for_status=is_username_req
+        response_client_id = response.get("id")
+        if response_client_id != client_id:
+            raise ValueError(
+                f"Response client ID mismatch (found {response_client_id}, expected {client_id})"
             )
-            print(f"[Whitelist request command sent ({word})]")
+
+        response_message = str(response.get("message"))
+        if str(response_message) != WSResponse.COMPLETE.value:
+            raise ValueError(
+                f"Unexpected reponse message (found {response_message}, expected {WSResponse.COMPLETE.value})"
+            )
 
 
 async def _blacklist_alert(
