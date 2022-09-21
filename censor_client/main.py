@@ -1,4 +1,5 @@
 import logging
+from asyncio import create_task
 
 import controller
 import uvicorn
@@ -11,6 +12,7 @@ from models import RequestCensoredMessage
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
+from websocket_utils import BackgroundWebsocketProcess
 
 app = FastAPI(
     title="Whitelist Service - Client",
@@ -49,6 +51,10 @@ async def startup_event() -> None:
     # load misc. state
     app.state.whitelist_state = controller.load_state()
 
+    # start central server link
+    app.state.ws_manager = BackgroundWebsocketProcess()
+    create_task(app.state.ws_manager.main_loop())
+
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
@@ -85,6 +91,7 @@ async def request_censored_message(
             app.state.whitelist_state,
             username,
             message,
+            app.state.ws_manager,
             background_tasks,
         )
 

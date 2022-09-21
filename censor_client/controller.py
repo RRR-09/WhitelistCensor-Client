@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Dict, List, Set
 
 import aiohttp
-import websockets
 from dotenv import dotenv_values
 from fastapi import BackgroundTasks
 from models import (
@@ -14,9 +13,8 @@ from models import (
     UsernameWhitelistRequestedProfile,
     UsernameWhitelistRequestedStatus,
     WhitelistDatasets,
-    WSFunction,
-    WSResponse,
 )
+from websocket_utils import BackgroundWebsocketProcess
 
 MIN_TO_REQUEST_WHITELIST = 2  # Minimum messages to trigger a whitelist request
 REMOTE_DATA_PATH = Path("..", "data_remote")  # Synced with remote master
@@ -31,7 +29,7 @@ FILE_PATHS = {
     "random_suffixes": REMOTE_DATA_PATH / "random_suffixes.json",
     "trusted_usernames": REMOTE_DATA_PATH / "trusted_usernames.json",
     "usernames": REMOTE_DATA_PATH / "usernames.json",
-    "sorted_datasets": REMOTE_DATA_PATH / "whitelist_data",
+    "sorted_datasets": REMOTE_DATA_PATH / "sorted_datasets",
     "username_request_statuses": LOCAL_DATA_PATH / "username_request_statuses.json",
 }
 
@@ -115,7 +113,7 @@ def load_data() -> WhitelistDatasets:
     datasets["sorted_datasets"] = set()
     for dataset_file in FILE_PATHS["sorted_datasets"].glob("*.json"):
         try:
-            with open(FILE_PATHS["sorted_datasets"] / dataset_file, "r") as f:
+            with open(dataset_file, "r") as f:
                 data = json.load(f)
                 datasets["sorted_datasets"].update(set(data))
         except Exception:
@@ -365,7 +363,12 @@ async def _get_blacklisted_words(
     return blacklisted_words
 
 
-async def _request_username(state: FileDrivenState, username: str, message: str):
+async def _request_username(
+    ws_manager: BackgroundWebsocketProcess,
+    state: FileDrivenState,
+    username: str,
+    message: str,
+):
     username_lower = username.lower()
     default_profile = UsernameWhitelistRequestedProfile(
         status=UsernameWhitelistRequestedStatus.NOT_ON_RECORD, messages=0
@@ -374,7 +377,7 @@ async def _request_username(state: FileDrivenState, username: str, message: str)
         username_lower, default_profile
     )
     try:
-        await _whitelist_request(
+        await ws_manager.whitelist_request(
             [username_lower], message, username, is_username_req=True
         )
         profile["status"] = UsernameWhitelistRequestedStatus.REQUEST_SENT
@@ -385,43 +388,6 @@ async def _request_username(state: FileDrivenState, username: str, message: str)
     state["username_whitelist_request_data"][username_lower] = profile
     with open(FILE_PATHS["username_request_statuses"], "w") as f:
         json.dump(state["username_whitelist_request_data"], f)
-
-
-async def _whitelist_request(
-    requests: List[str], message: str, username: str, is_username_req=False
-):
-    client_id = getenv("WS_CLIENT_ID")
-    data = {
-        "id": client_id,
-        "function": WSFunction.WHITELIST_REQUEST,
-        "data": {
-            "requests": requests,
-            "message": message,
-            "username": username,
-            "is_username_req": is_username_req,
-            "channelname": getenv("TWITCH_CHAT_CHANNEL"),
-        },
-    }
-    uri = getenv("WS_SERVER_URL", "")
-
-    async with websockets.connect(uri) as websocket:  # type: ignore
-        await websocket.send(json.dumps(data))
-
-        response_raw = await websocket.recv()
-        response = json.loads(response_raw)
-        print(response)
-
-        response_client_id = response.get("id")
-        if response_client_id != client_id:
-            raise ValueError(
-                f"Response client ID mismatch (found {response_client_id}, expected {client_id})"
-            )
-
-        response_message = str(response.get("message"))
-        if str(response_message) != WSResponse.COMPLETE.value:
-            raise ValueError(
-                f"Unexpected reponse message (found {response_message}, expected {WSResponse.COMPLETE.value})"
-            )
 
 
 async def _blacklist_alert(
@@ -510,6 +476,7 @@ async def request_censored_message(
     state: FileDrivenState,
     username: str,
     message: str,
+    ws_manager: BackgroundWebsocketProcess,
     background_tasks: BackgroundTasks,
 ) -> RequestCensoredMessageReturn:
     """
@@ -540,7 +507,9 @@ async def request_censored_message(
             UsernameWhitelistRequestedStatus.READY_TO_REQUEST,
             UsernameWhitelistRequestedStatus.FAILED_TO_REQUEST,
         }:
-            background_tasks.add_task(_request_username, state, username, message)
+            background_tasks.add_task(
+                _request_username, ws_manager, state, username, message
+            )
 
     # Check if message contains blacklisted words
     blacklisted_words = await _get_blacklisted_words(ds, message)
@@ -569,7 +538,7 @@ async def request_censored_message(
             f"approval ({', '.join(censored_words)})]"
         )
         background_tasks.add_task(
-            _whitelist_request, censored_words, message, original_name
+            ws_manager.whitelist_request, censored_words, message, original_name
         )
 
     return RequestCensoredMessageReturn(
