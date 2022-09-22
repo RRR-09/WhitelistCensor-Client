@@ -57,4 +57,4 @@ jobs:
       - name: Dependency Security Audit (ossaudit)
         run: |
           poetry export -o requirements-dev.txt --dev --without-hashes
-          poetry run python poetry_scripts\run_audit.py
+          poetry run python .github\run_audit.py
