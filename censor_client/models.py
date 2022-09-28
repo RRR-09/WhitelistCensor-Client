@@ -89,6 +89,17 @@ class WhitelistDatasets(TypedDict):
     version: int
 
 
+class TempDataset(TypedDict):
+    """
+    A total container for all whitelist data.
+    - `custom` is used for new requests. Appended to during operation.
+    - `usernames` is used for allowing twitch usernames or mentions of ingame usernames. Appended to during operation.
+    """
+
+    custom: Set[str]
+    usernames: Set[str]
+
+
 class WSFunction(str, Enum):
     WHITELIST_REQUEST = "WHITELIST_REQUEST"
 

@@ -3,7 +3,7 @@ from asyncio import sleep as async_sleep
 from enum import Enum
 from os import getenv
 from time import time
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 import websockets
 
@@ -17,17 +17,22 @@ class WSResponse(str, Enum):
     COMPLETE = "COMPLETE"
     AUTH_SUCCESS = "AUTH_SUCCESS"
     AUTH_FAIL = "AUTH_FAIL"
+    WHITELIST_UPDATE = "WHITELIST_UPDATE"
 
 
 class BackgroundWebsocketProcess:
-    def __init__(self):
+    def __init__(self, add_temp_data_func):
         # Seconds before re-attempting a central server connection
         self.reconnect_delay = 5
         self.client_id = getenv("WS_CLIENT_ID", "")
         self.channel_name = getenv("TWITCH_CHAT_CHANNEL", "")
+        self.server_id = getenv("WS_SERVER_ID")
+        if self.server_id is None:
+            raise ValueError("Server ID not specified")
         self.ws_uri = getenv("WS_SERVER_URL", "")
         self.websocket: Any = None
         self.messages: Dict[str, Dict] = {}
+        self.add_temp_data_func: Callable = add_temp_data_func
 
     async def is_live(self):
         # TODO: Find criteria for connection drops
@@ -94,7 +99,6 @@ class BackgroundWebsocketProcess:
         await self.websocket.send(json.dumps(data))
 
         response = await self.wait_for_message(msg_timestamp)
-        print(response)
 
         response_client_id = response.get("id")
         if response_client_id != self.client_id:
@@ -107,6 +111,30 @@ class BackgroundWebsocketProcess:
             raise ValueError(
                 f"Unexpected reponse message (found {response_message}, expected {WSResponse.COMPLETE.value})"
             )
+
+    async def update_whitelist(self, message: Dict):
+        server_id = message.get("id")
+        if server_id != self.server_id:
+            raise ValueError(
+                f"Message's server ID mismatch (found {server_id}, expected {self.server_id})"
+            )
+
+        data = message.get("data", {})
+        if data.get("word") is None:
+            raise ValueError(f"Received malformed data, 'word' not found:\n{data}")
+        if data.get("is_username") is None or type(data.get("is_username")) != bool:
+            raise ValueError(
+                f"Received malformed data, 'is_username' not found or not bool:\n{data}"
+            )
+
+        word = str(data["word"])
+        is_username: bool = data["is_username"]
+
+        dataset_index = "usernames" if is_username else "custom"
+
+        self.add_temp_data_func(dataset_index, word)
+
+        print(f"[WS] Updated temp dataset {dataset_index} with '{word}'.")
 
     async def establish_connection(self):
         async with websockets.connect(self.ws_uri) as websocket:
@@ -140,9 +168,22 @@ class BackgroundWebsocketProcess:
                         print("[WS] Failure in decoding incoming message to JSON")
                         continue
 
+                    print("[WS] Message loop")
+                    print(message)
+
+                    if (
+                        str(response.get("message"))
+                        == WSResponse.WHITELIST_UPDATE.value
+                    ):
+                        # Incoming comm from server, skip message queue
+                        try:
+                            await self.update_whitelist(message)
+                        except ValueError as e:
+                            print(e)
+                        continue
+
                     timestamp = message.get("timestamp")
                     self.messages[timestamp] = message
-                    print("[WS] Message loop")
                     await async_sleep(0)
             except websockets.exceptions.ConnectionClosedError:
                 print("[WS] Connection closed")

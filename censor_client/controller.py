@@ -10,6 +10,7 @@ from models import (
     CensoredStringReturn,
     FileDrivenState,
     RequestCensoredMessageReturn,
+    TempDataset,
     UsernameWhitelistRequestedProfile,
     UsernameWhitelistRequestedStatus,
     WhitelistDatasets,
@@ -477,6 +478,7 @@ async def request_censored_message(
     username: str,
     message: str,
     ws_manager: BackgroundWebsocketProcess,
+    whitelist_temp_data: TempDataset,
     background_tasks: BackgroundTasks,
 ) -> RequestCensoredMessageReturn:
     """

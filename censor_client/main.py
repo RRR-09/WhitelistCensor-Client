@@ -8,7 +8,7 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from models import RequestCensoredMessage
+from models import RequestCensoredMessage, TempDataset
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
@@ -51,8 +51,14 @@ async def startup_event() -> None:
     # load misc. state
     app.state.whitelist_state = controller.load_state()
 
+    app.state.whitelist_temp_data = TempDataset(custom=set(), usernames=set())
+
     # start central server link
-    app.state.ws_manager = BackgroundWebsocketProcess()
+    def add_to_temp_data(index: str, word: str):
+        app.state.whitelist_temp_data[index].add(word)
+
+    app.state.ws_manager = BackgroundWebsocketProcess(add_to_temp_data)
+    app.state.whitelist_temp_data["custom"].add("test")
     create_task(app.state.ws_manager.main_loop())
 
 
@@ -92,6 +98,7 @@ async def request_censored_message(
             username,
             message,
             app.state.ws_manager,
+            app.state.whitelist_temp_data,
             background_tasks,
         )
 
