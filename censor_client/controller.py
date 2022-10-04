@@ -1,9 +1,12 @@
 import json
+import shutil
 from os import getenv
 from pathlib import Path
+from stat import S_ISDIR
 from typing import Dict, List, Set
 
 import aiohttp
+import paramiko
 from dotenv import dotenv_values
 from fastapi import BackgroundTasks
 from models import (
@@ -32,6 +35,8 @@ FILE_PATHS = {
     "usernames": REMOTE_DATA_PATH / "usernames.json",
     "sorted_datasets": REMOTE_DATA_PATH / "sorted_datasets",
     "username_request_statuses": LOCAL_DATA_PATH / "username_request_statuses.json",
+    "version_local": LOCAL_DATA_PATH / "version.json",
+    "version_remote": REMOTE_DATA_PATH / "version.json",
 }
 
 
@@ -76,6 +81,9 @@ def initialize_datafiles():
         "trusted_usernames": [],
         "usernames": [],
         "username_request_statuses": {},
+        "version_local": {
+            "version": 0
+        },  # Default on client should be lower than default on remote
     }
 
     for file_path_key, default_value in default_data.items():
@@ -130,6 +138,14 @@ def load_data() -> WhitelistDatasets:
     except Exception:
         raise ValueError(f"{FILE_PATHS['nicknames']} malformed or missing")
 
+    # Load version and parse
+    try:
+        with open(FILE_PATHS["version_local"], "r") as f:
+            data = json.load(f)
+            version = int(data["version"])
+    except Exception:
+        raise ValueError(f"{FILE_PATHS['version']} malformed or missing")
+
     return WhitelistDatasets(
         blacklist=datasets.pop("blacklist"),
         custom=datasets.pop("custom"),
@@ -142,7 +158,7 @@ def load_data() -> WhitelistDatasets:
         sorted_datasets=datasets.pop("sorted_datasets"),
         trusted_usernames=datasets.pop("trusted_usernames"),
         usernames=datasets.pop("usernames"),
-        version=0,
+        version=version,
     )
 
 
@@ -548,3 +564,65 @@ async def request_censored_message(
         message=censored_string,
         bot_reply_message=reply_message,
     )
+
+
+async def sftp_get_recursive(path: str, dest: str, sftp: paramiko.SFTPClient):
+    # TODO: replace os with pathlib
+    import os
+
+    item_list = sftp.listdir_attr(path)
+    dest = str(dest)
+    if not os.path.isdir(dest):
+        os.makedirs(dest, exist_ok=True)
+    for item in item_list:
+        mode = item.st_mode
+        if mode is None:
+            continue
+
+        if S_ISDIR(mode):
+            await sftp_get_recursive(
+                path + "/" + item.filename, dest + "/" + item.filename, sftp
+            )
+        else:
+            sftp.get(path + "/" + item.filename, dest + "/" + item.filename)
+
+
+async def download_latest_datasets():
+    transport = paramiko.Transport((getenv("SFTP_HOST", ""), 22))
+    transport.connect(
+        username=getenv("SFTP_USER", ""), password=getenv("SFTP_PASSWORD")
+    )
+    sftp = paramiko.SFTPClient.from_transport(transport)
+    if sftp is None:
+        raise ValueError("SFTPClient is None")
+    await sftp_get_recursive("/home/whitelist_data/", str(REMOTE_DATA_PATH), sftp)
+    sftp.close()
+
+
+async def get_remote_version() -> int | None:
+    try:
+        with open(FILE_PATHS["version_remote"], "r") as f:
+            data = json.load(f)
+            return int(data["version"])
+    except Exception:
+        return None
+
+
+async def merge_downloads_to_local():
+    shutil.copytree(REMOTE_DATA_PATH, LOCAL_DATA_PATH, dirs_exist_ok=True)
+
+
+async def download_and_load_latest(state):
+    # state.whitelist_data: WhitelistDatasets
+    await download_latest_datasets()
+    remote_version = await get_remote_version()
+    if remote_version is None:
+        # TODO: Alert that there was a failure
+        return
+    elif remote_version <= state.whitelist_data["version"]:
+        # We're up to date
+        return
+
+    print(f"Update downloaded (v{remote_version})")
+    await merge_downloads_to_local()
+    state.whitelist_data = load_data()

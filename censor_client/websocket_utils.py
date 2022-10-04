@@ -113,6 +113,7 @@ class BackgroundWebsocketProcess:
             )
 
     async def update_whitelist(self, message: Dict):
+        # TODO: Implement realtime updates
         server_id = message.get("id")
         if server_id != self.server_id:
             raise ValueError(
@@ -196,7 +197,7 @@ class BackgroundWebsocketProcess:
                 try:
                     await self.establish_connection()
                     print("[WS] Connection established")
-                except Exception:
-                    print("[WS] Failure to establish connection in main loop")
+                except Exception as e:
+                    print(f"[WS] Failure to establish connection in main loop\n{e}")
 
             await async_sleep(self.reconnect_delay)
