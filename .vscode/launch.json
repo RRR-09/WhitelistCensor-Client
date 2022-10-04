@@ -1,18 +1,14 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Main (Uvicorn FastAPI)",
-            "type": "python",
-            "request": "launch",
-            "module": "uvicorn",
-            "cwd": "${workspaceFolder}/censor_client",
-            "args": [
-                "main:app",
-                "--port",
-                "8086"
-            ],
-            "justMyCode": false
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Main (Uvicorn/Rocketry)",
+      "type": "python",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}/censor_client",
+      "module": "main",
+      "justMyCode": false
+    }
+  ]
 }
