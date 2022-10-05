@@ -21,19 +21,19 @@ from models import (
 from websocket_utils import BackgroundWebsocketProcess
 
 MIN_TO_REQUEST_WHITELIST = 2  # Minimum messages to trigger a whitelist request
-REMOTE_DATA_PATH = Path("..", "data_remote")  # Synced with remote master
-LOCAL_DATA_PATH = Path("..", "data_local")  # Only used and modified locally
+REMOTE_DATA_PATH = Path("data_remote")  # Synced with remote master
+LOCAL_DATA_PATH = Path("data_local")  # Only used and modified locally
 FILE_PATHS = {
-    "blacklist": REMOTE_DATA_PATH / "blacklist.json",
-    "custom_old": REMOTE_DATA_PATH / "custom_old.json",
-    "custom": REMOTE_DATA_PATH / "custom.json",
-    "dictionary": REMOTE_DATA_PATH / "dictionary.json",
-    "nicknames": REMOTE_DATA_PATH / "nicknames.json",
-    "random_prefixes": REMOTE_DATA_PATH / "random_prefixes.json",
-    "random_suffixes": REMOTE_DATA_PATH / "random_suffixes.json",
-    "trusted_usernames": REMOTE_DATA_PATH / "trusted_usernames.json",
-    "usernames": REMOTE_DATA_PATH / "usernames.json",
-    "sorted_datasets": REMOTE_DATA_PATH / "sorted_datasets",
+    "blacklist": LOCAL_DATA_PATH / "blacklist.json",
+    "custom_old": LOCAL_DATA_PATH / "custom_old.json",
+    "custom": LOCAL_DATA_PATH / "custom.json",
+    "dictionary": LOCAL_DATA_PATH / "dictionary.json",
+    "nicknames": LOCAL_DATA_PATH / "nicknames.json",
+    "random_prefixes": LOCAL_DATA_PATH / "random_prefixes.json",
+    "random_suffixes": LOCAL_DATA_PATH / "random_suffixes.json",
+    "trusted_usernames": LOCAL_DATA_PATH / "trusted_usernames.json",
+    "usernames": LOCAL_DATA_PATH / "usernames.json",
+    "sorted_datasets": LOCAL_DATA_PATH / "sorted_datasets",
     "username_request_statuses": LOCAL_DATA_PATH / "username_request_statuses.json",
     "version_local": LOCAL_DATA_PATH / "version.json",
     "version_remote": REMOTE_DATA_PATH / "version.json",
