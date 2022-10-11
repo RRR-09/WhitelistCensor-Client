@@ -588,15 +588,28 @@ async def sftp_get_recursive(path: str, dest: str, sftp: paramiko.SFTPClient):
 
 
 async def download_latest_datasets():
-    transport = paramiko.Transport((getenv("SFTP_HOST", ""), 22))
-    transport.connect(
-        username=getenv("SFTP_USER", ""), password=getenv("SFTP_PASSWORD")
-    )
-    sftp = paramiko.SFTPClient.from_transport(transport)
-    if sftp is None:
-        raise ValueError("SFTPClient is None")
-    await sftp_get_recursive("/home/whitelist_data/", str(REMOTE_DATA_PATH), sftp)
-    sftp.close()
+    try:
+        transport = paramiko.Transport((getenv("SFTP_HOST", ""), 22))
+        transport.connect(
+            username=getenv("SFTP_USER", ""), password=getenv("SFTP_PASSWORD")
+        )
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        if sftp is None:
+            raise ValueError("SFTPClient is None")
+        await sftp_get_recursive("/home/whitelist_data/", str(REMOTE_DATA_PATH), sftp)
+    except Exception as e:
+        print(e)
+
+    # HACK: Unclosed connections are poorly handled by server.
+    # Have to do our absolute best clientside to ensure connections are cleaned up.
+    try:
+        sftp.close()
+    except Exception as e:
+        print(e)
+    try:
+        transport.close()
+    except Exception as e:
+        print(e)
 
 
 async def get_remote_version() -> int | None:
