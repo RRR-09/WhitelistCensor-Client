@@ -231,6 +231,10 @@ async def _duplicate_character_checker(ds: WhitelistDatasets, message_raw: str):
     if character_count > 1:
         repetitions.append(last_character * character_count)
 
+    if not repetitions:
+        # No duplications detected
+        return False
+
     # Attempt to strip all repetitions to a maximum of 2
     initial_attempt = message
     new_repetitions: List[str] = []
@@ -249,6 +253,10 @@ async def _duplicate_character_checker(ds: WhitelistDatasets, message_raw: str):
     if await _word_in_whitelists(ds, initial_attempt):
         print(f"De-duplication for {message_raw} found in dataset ({initial_attempt})")
         return True
+
+    if not new_repetitions:
+        # No duplications detected
+        return False
 
     possibilities = await _two_letter_recursive(initial_attempt, new_repetitions)
     for possibility in possibilities:

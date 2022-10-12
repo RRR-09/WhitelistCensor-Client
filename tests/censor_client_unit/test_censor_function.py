@@ -58,3 +58,25 @@ async def test_repeated_characters(expected):
 
     censored_string = await _get_censored_string(dataset, "qqwwweeeerrrrrttttttyyyyyyy")
     assert censored_string.censored_words == []
+
+
+@pytest.mark.asyncio
+async def test_not_found():
+    dataset = WhitelistDatasets(
+        blacklist=set(),
+        custom=set(),
+        custom_old=set(),
+        dictionary=set(),
+        nicknames={},
+        nicknames_set=set(),
+        random_prefixes=set(),
+        random_suffixes=set(),
+        sorted_datasets=set(),
+        trusted_usernames=set(),
+        usernames=set(),
+        version=0,
+    )
+
+    censored_string = await _get_censored_string(dataset, "asdf")
+    assert censored_string.censored_string == "****"
+    assert censored_string.censored_words == ["asdf"]
