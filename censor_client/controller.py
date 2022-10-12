@@ -7,9 +7,7 @@ from typing import Dict, List, Set
 
 import aiohttp
 import paramiko
-from dotenv import dotenv_values
-from fastapi import BackgroundTasks
-from models import (
+from censor_client.models import (
     CensoredStringReturn,
     FileDrivenState,
     RequestCensoredMessageReturn,
@@ -18,7 +16,9 @@ from models import (
     UsernameWhitelistRequestedStatus,
     WhitelistDatasets,
 )
-from websocket_utils import BackgroundWebsocketProcess
+from censor_client.websocket_utils import BackgroundWebsocketProcess
+from dotenv import dotenv_values
+from fastapi import BackgroundTasks
 
 MIN_TO_REQUEST_WHITELIST = 2  # Minimum messages to trigger a whitelist request
 REMOTE_DATA_PATH = Path("data_remote")  # Synced with remote master
@@ -192,6 +192,73 @@ async def _word_in_whitelists(ds: WhitelistDatasets, word: str) -> bool:
     )
 
 
+async def _two_letter_recursive(message: str, repetitions: List[str]) -> List[str]:
+    """
+    Recursive function that given a list of repeating characters (["aa","bb"]) returns all possible variations of the
+    repeating characters removed (including the original message)
+    """
+    if len(repetitions) == 1:
+        # Base case
+        missing = repetitions[0]
+        return [message, message.replace(missing, missing[:1])]
+
+    missing = repetitions.pop(0)
+    sub_possibilities = await _two_letter_recursive(message, repetitions)
+
+    possibilities = []
+    for sub_possibility in sub_possibilities:
+        possibilities.append(sub_possibility)
+        possibilities.append(sub_possibility.replace(missing, missing[:1]))
+
+    return possibilities
+
+
+async def _duplicate_character_checker(ds: WhitelistDatasets, message_raw: str):
+    message = message_raw.lower()
+    repetitions = []
+    character_count = 1
+    last_character = ""
+    for character in message:
+        if character != last_character:
+            if character_count > 1:
+                repetitions.append(last_character * character_count)
+                character_count = 1
+            last_character = character
+            continue
+
+        character_count += 1
+
+    if character_count > 1:
+        repetitions.append(last_character * character_count)
+
+    # Attempt to strip all repetitions to a maximum of 2
+    initial_attempt = message
+    new_repetitions: List[str] = []
+    for repetition in repetitions:
+        if len(repetition) > 2:
+            # We need to replace it
+            new_repetition = repetition[:2]
+            initial_attempt = initial_attempt.replace(repetition, new_repetition)
+        else:
+            new_repetition = repetition
+
+        if new_repetition not in new_repetitions:
+            # Add the 2-char repetition to a list for later variation gathering
+            new_repetitions.append(new_repetition)
+
+    if await _word_in_whitelists(ds, initial_attempt):
+        print(f"De-duplication for {message_raw} found in dataset ({initial_attempt})")
+        return True
+
+    possibilities = await _two_letter_recursive(initial_attempt, new_repetitions)
+    for possibility in possibilities:
+        if await _word_in_whitelists(ds, possibility):
+            print(f"De-duplication for {message_raw} found in dataset ({possibility})")
+            return True
+
+    return False
+
+
 async def _get_censored_string(
     ds: WhitelistDatasets, unsafe_string_to_check: str, debug=False
 ) -> CensoredStringReturn:
@@ -286,13 +353,19 @@ async def _get_censored_string(
             if not good_with_suffix_change and (
                 not suffix_was_duplicated or len(clean_word) < 3
             ):
-                print_if_debug(f"blacklist_action: {clean_word} ({word})", debug)
-                censored_words.append(clean_word.lower())
-                previous_asterisks = original_word.count("*")
-                clean_word = original_word.replace(clean_word, "*" * len(clean_word))
-                if clean_word.count("*") < len(clean_word) - previous_asterisks:
-                    # Theres some weird interjecting symbols and we should just censor the whole word
-                    clean_word = len(original_word) * "*"
+                # Attempt to strip out repeating characters, like "ttteeeessssttt" qualifying as "test"
+                matching_duplicate = await _duplicate_character_checker(ds, clean_word)
+                if not matching_duplicate:
+                    # Could not find it at all
+                    print_if_debug(f"blacklist_action: {clean_word} ({word})", debug)
+                    censored_words.append(clean_word.lower())
+                    previous_asterisks = original_word.count("*")
+                    clean_word = original_word.replace(
+                        clean_word, "*" * len(clean_word)
+                    )
+                    if clean_word.count("*") < len(clean_word) - previous_asterisks:
+                        # Theres some weird interjecting symbols and we should just censor the whole word
+                        clean_word = len(original_word) * "*"
         elif word_is_spaced:
             # If we've checked the non-spaced word is fine,
             # retain the spacing
