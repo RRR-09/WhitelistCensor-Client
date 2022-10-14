@@ -7,9 +7,7 @@ from typing import Dict, List, Set
 
 import aiohttp
 import paramiko
-from dotenv import dotenv_values
-from fastapi import BackgroundTasks
-from models import (
+from censor_client.models import (
     CensoredStringReturn,
     FileDrivenState,
     RequestCensoredMessageReturn,
@@ -18,7 +16,9 @@ from models import (
     UsernameWhitelistRequestedStatus,
     WhitelistDatasets,
 )
-from websocket_utils import BackgroundWebsocketProcess
+from censor_client.websocket_utils import BackgroundWebsocketProcess
+from dotenv import dotenv_values
+from fastapi import BackgroundTasks
 
 MIN_TO_REQUEST_WHITELIST = 2  # Minimum messages to trigger a whitelist request
 REMOTE_DATA_PATH = Path("data_remote")  # Synced with remote master

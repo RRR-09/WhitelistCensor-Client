@@ -1,20 +1,20 @@
 import asyncio
 import logging
 
-import controller
 import uvicorn
+from censor_client import controller
+from censor_client.models import RequestCensoredMessage, TempDataset
+from censor_client.websocket_utils import BackgroundWebsocketProcess
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from models import RequestCensoredMessage, TempDataset
 from rocketry import Rocketry
 from rocketry.conds import every
 from starlette import status
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from websocket_utils import BackgroundWebsocketProcess
 
 fastapi_app = FastAPI(
     title="Whitelist Service - Client",
@@ -133,7 +133,7 @@ async def request_censored_message(
 #     uvicorn.run(app="main:app")
 
 
-async def main():
+async def async_main():
     "Run Rocketry and FastAPI"
     server = Server(
         config=uvicorn.Config(
@@ -147,7 +147,7 @@ async def main():
     await asyncio.wait([api, scheduler])
 
 
-if __name__ == "__main__":
+def init():
     # load settings
     load_dotenv(".env", verbose=True)
     controller.check_dotenv()
@@ -157,4 +157,8 @@ if __name__ == "__main__":
     logger.addHandler(logging.StreamHandler())
 
     # Run both applications
-    asyncio.run(main())
+    asyncio.run(async_main())
+
+
+if __name__ == "__main__":
+    init()
