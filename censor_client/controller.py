@@ -327,7 +327,7 @@ async def _get_censored_string(
         if not is_temp_name and not_empty_or_in_whitelists:
             # Attempt to remove common suffixes (plurals, possessive) and check the whitelist after
             good_with_suffix_change = False
-            common_added_suffixes = {"s", "ve", "d", "less"}
+            common_added_suffixes = {"s", "ve", "d", "less", "ing"}
             for suffix in common_added_suffixes:
                 truncated_word = clean_word.removesuffix(suffix)
                 if truncated_word != clean_word:
