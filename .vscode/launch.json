@@ -6,7 +6,7 @@
       "type": "python",
       "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "cwd": "${workspaceFolder}/censor_client",
+      "cwd": "${workspaceFolder}",
       "module": "main",
       "justMyCode": false
     }
