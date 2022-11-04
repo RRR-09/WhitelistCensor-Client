@@ -13,6 +13,7 @@ aiohttp = "^3.8.1"
 websockets = "^10.3"
 paramiko = "^2.11.0"
 rocketry = "^2.4.1"
+twitchio = "^2.5.0"
 
 [tool.poetry.dev-dependencies]
 black = "^22.8.0"

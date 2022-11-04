@@ -5,6 +5,7 @@ import uvicorn
 from censor_client import controller
 from censor_client.models import RequestCensoredMessage, TempDataset
 from censor_client.websocket_utils import BackgroundWebsocketProcess
+from censor_client.twitch_utils import TwitchBot
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.encoders import jsonable_encoder
@@ -22,7 +23,6 @@ fastapi_app = FastAPI(
         "Local HTTP server for the application to utilize local data or communicate with the central censor server"
     ),
 )
-
 fastapi_app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -30,8 +30,9 @@ fastapi_app.add_middleware(
     allow_headers=["*"],
 )
 
-
 rocketry_app = Rocketry(execution="thread")
+
+twitch_bot = TwitchBot()
 
 
 class Server(uvicorn.Server):
@@ -78,7 +79,10 @@ async def startup_event() -> None:
         # TODO: Better way to do this
         fastapi_app.state.whitelist_temp_data[index].add(word)
 
-    fastapi_app.state.ws_manager = BackgroundWebsocketProcess(add_to_temp_data)
+    fastapi_app.state.ws_manager = BackgroundWebsocketProcess(
+        add_to_temp_data, twitch_bot.send_twitch_message
+    )
+
     asyncio.create_task(fastapi_app.state.ws_manager.main_loop())
 
 
@@ -129,8 +133,12 @@ async def request_censored_message(
         return JSONResponse(str(e), status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# if __name__ == "__main__":
-#     uvicorn.run(app="main:app")
+async def load_bot():
+    try:
+        twitch_bot.manual_init()
+        asyncio.create_task(twitch_bot.connect())
+    except Exception as e:
+        print(f"[Twitch] Bot Loop Error:\n{e}\n\n")
 
 
 async def async_main():
@@ -143,8 +151,9 @@ async def async_main():
 
     api = asyncio.create_task(server.serve())
     scheduler = asyncio.create_task(rocketry_app.serve())
+    twitch_bot_task = asyncio.create_task(load_bot())
 
-    await asyncio.wait([api, scheduler])
+    await asyncio.wait([api, scheduler, twitch_bot_task])
 
 
 def init():

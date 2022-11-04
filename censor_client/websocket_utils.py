@@ -21,7 +21,7 @@ class WSResponse(str, Enum):
 
 
 class BackgroundWebsocketProcess:
-    def __init__(self, add_temp_data_func):
+    def __init__(self, add_temp_data_func, send_twitch_message):
         # Seconds before re-attempting a central server connection
         self.reconnect_delay = 5
         self.client_id = getenv("WS_CLIENT_ID", "")
@@ -33,6 +33,7 @@ class BackgroundWebsocketProcess:
         self.websocket: Any = None
         self.messages: Dict[str, Dict] = {}
         self.add_temp_data_func: Callable = add_temp_data_func
+        self.send_twitch_message_func: Callable = send_twitch_message
 
     async def is_live(self):
         # TODO: Find criteria for connection drops
@@ -112,6 +113,16 @@ class BackgroundWebsocketProcess:
                 f"Unexpected reponse message (found {response_message}, expected {WSResponse.COMPLETE.value})"
             )
 
+    async def announce_whitelist_update(self, word: str, username: bool):
+        if username:
+            message = f'[The username "{word}" has been approved.]'
+        else:
+            message = f'[The word "{word}" has been added to the whitelist.]'
+        try:
+            await self.send_twitch_message_func(message)
+        except Exception as e:
+            print(f"[Twitch] Error sending announcement:\n{e}\n\n")
+
     async def update_whitelist(self, message: Dict):
         # TODO: Implement realtime updates
         server_id = message.get("id")
@@ -136,6 +147,7 @@ class BackgroundWebsocketProcess:
         self.add_temp_data_func(dataset_index, word)
 
         print(f"[WS] Updated temp dataset {dataset_index} with '{word}'.")
+        await self.announce_whitelist_update(word, is_username)
 
     async def establish_connection(self):
         async with websockets.connect(self.ws_uri) as websocket:
