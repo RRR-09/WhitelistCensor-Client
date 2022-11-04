@@ -581,6 +581,12 @@ async def request_censored_message(
     """
     Master censor function. Handles all automatic background logic related to the whitelist censor system.
     """
+
+    for key in whitelist_temp_data:
+        # TODO: Do this once, not every time
+        val = whitelist_temp_data[key]  # type: ignore[literal-required]
+        ds[key].update(val)  # type: ignore[literal-required]
+
     nickname = await _get_user_nickname(ds, username)
     if await _user_is_trusted(ds, username):
         # Beyond nickname, these users do not need to bother with the censor system.
@@ -720,3 +726,5 @@ async def download_and_load_latest(state):
     print(f"Update downloaded (v{remote_version})")
     await merge_downloads_to_local()
     state.whitelist_data = load_data()
+    # Clear tempdata, it should be in whitelist_data now
+    state.whitelist_temp_data = TempDataset(custom=set(), usernames=set())

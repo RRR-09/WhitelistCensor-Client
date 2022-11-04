@@ -172,10 +172,7 @@ class BackgroundWebsocketProcess:
                     print("[WS] Message loop")
                     print(message)
 
-                    if (
-                        str(response.get("message"))
-                        == WSResponse.WHITELIST_UPDATE.value
-                    ):
+                    if str(message.get("message")) == WSResponse.WHITELIST_UPDATE.value:
                         # Incoming comm from server, skip message queue
                         try:
                             await self.update_whitelist(message)

@@ -75,10 +75,10 @@ async def startup_event() -> None:
 
     # start central server link
     def add_to_temp_data(index: str, word: str):
+        # TODO: Better way to do this
         fastapi_app.state.whitelist_temp_data[index].add(word)
 
     fastapi_app.state.ws_manager = BackgroundWebsocketProcess(add_to_temp_data)
-    fastapi_app.state.whitelist_temp_data["custom"].add("test")
     asyncio.create_task(fastapi_app.state.ws_manager.main_loop())
 
 
